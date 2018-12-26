@@ -1,0 +1,24 @@
+import dao.SqlDataProvider
+import domain.Order
+import domain.Part
+import domain.PartRequest
+import java.util.List
+
+constant startSimulation = "2017-01-01"
+constant finishSimulation = "2018-01-01"
+
+constant driver = "com.mysql.jdbc.Driver"
+constant dialect = "org.hibernate.dialect.MySQLDialect"
+constant url = "jdbc:mysql://localhost:3306/corp_terminal?zeroDateTimeBehavior=convertToNull"
+constant username = "Observr"
+constant password = "CY73-YVRE-3FT2"
+
+def init() {
+	val data = new SqlDataProvider(driver, url, username, password, dialect, Part, Order, PartRequest)
+	val em = data.getEntityManager
+	val orderList = em.createQuery("select o from Order o").setMaxResults(100).getResultList as List<Order>
+
+	for (order : orderList) {
+		log(order.getEpochDayOfCreation() + " " + order)
+	}
+}
