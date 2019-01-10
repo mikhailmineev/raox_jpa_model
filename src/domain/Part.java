@@ -9,7 +9,7 @@ import javax.persistence.OneToMany;
 import javax.persistence.Table;
 
 @Entity
-@Table(name = "catalogue")
+@Table(name = "Catalogue")
 public class Part {
 
 	@Id

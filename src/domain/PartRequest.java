@@ -12,7 +12,7 @@ import javax.persistence.ManyToOne;
 import javax.persistence.Table;
 
 @Entity
-@Table(name = "requestedpartslist")
+@Table(name = "RequestedPartsList")
 @IdClass(value = PartRequest.PartRequestId.class)
 public class PartRequest {
 
