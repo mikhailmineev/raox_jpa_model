@@ -1,0 +1,9 @@
+import domain.Order
+
+type OrderType {
+	Order original
+	model.OrderState state
+	model.OrderResult resulted
+	double creationTime
+	double emptyProcessDuration
+}

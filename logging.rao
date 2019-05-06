@@ -1,0 +1,27 @@
+enum Level {DEBUG, INFO}
+
+constant logLevel = Level.DEBUG
+
+void infoIf(boolean condition, String text){
+	if (condition)
+		info(text)
+}
+
+void info(String text){
+	if (logLevel.ordinal <= Level.INFO.ordinal)
+		log(Level.INFO, text)
+}
+
+void debugIf(boolean condition, String text){
+	if (condition)
+		debug(text)
+}
+
+void debug(String text){
+	if (logLevel.ordinal <= Level.DEBUG.ordinal)
+		log(Level.DEBUG, text)
+}
+
+void log(Level level, String text){
+	log(Level.INFO + "\t" + configurer.timeFormat(currentTime) + "\t" + text)
+}

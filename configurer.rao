@@ -1,0 +1,13 @@
+import java.time.format.DateTimeFormatter
+import java.time.LocalDate
+
+constant dtf = DateTimeFormatter.ofPattern("dd-MM-uuuu")
+
+def timeFormat(double time) {
+	return timeFormat(time)
+}
+
+String timeFormat(double time) {
+	val roundedTime = Math.round(time);
+	return LocalDate.ofEpochDay(roundedTime).format(dtf)
+}

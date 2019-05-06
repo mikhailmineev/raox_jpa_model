@@ -1,0 +1,33 @@
+def experiments(){
+	start()
+
+	val successes = model.successfulDuration.size
+	val fails = model.failDuration.size
+	val percentage = if ((successes + fails) == 0)
+			0
+		else
+			successes * 100 / (successes + fails)
+	log(
+		String.format("Result: \t\tOrders: \t%d/%d Successful percentage: %d%%", successes, successes + fails,
+			percentage))
+	val failResults = model.failDuration.stream.mapToDouble([f|f]).summaryStatistics
+	log(
+		String.format("Fail duration: \tAverage: \t%f\tMax: %f\tMin: %f", failResults.getAverage, failResults.getMax,
+			failResults.getMin))
+	val successfulResults = model.successfulDuration.stream.mapToDouble([f|f]).summaryStatistics
+	log(
+		String.format("Ok duration: \tAverage: \t%f\tMax: %f\tMin: %f", successfulResults.getAverage,
+			successfulResults.getMax, successfulResults.getMin))
+	val failPriceResults = model.failPrices.stream.mapToLong([f|f]).summaryStatistics
+	log(
+		String.format("Fail price: \tAverage: \t%f\tMax: %d\tMin: %d", failPriceResults.getAverage,
+			failPriceResults.getMax, failPriceResults.getMin))
+	val successPriceResults = model.successfulPrices.stream.mapToLong([f|f]).summaryStatistics
+	log(
+		String.format("Ok prive: \t\tAverage: \t%f\tMax: %d\tMin: %d", successPriceResults.getAverage,
+			successPriceResults.getMax, successPriceResults.getMin))
+	val deliveryResults = model.deliveries.stream.mapToInt([f|f]).summaryStatistics
+	log(String.format("Deliveries: \tSum: \t\t%d", deliveryResults.getSum))
+
+	log(String.format("Balance: \t\tLast: \t\t%d \tDelta: %d", model.company.balance, (model.company.balance - model.initialBalance)))
+}

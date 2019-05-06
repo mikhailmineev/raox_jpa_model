@@ -1,0 +1,66 @@
+import domain.Order
+import java.time.temporal.ChronoUnit
+import domain.PartRequest
+import java.util.List
+import util.PartDeliveryRequest
+import java.util.HashMap
+import java.util.ArrayList
+import java.util.Map
+import raox_jpa_model.^types.OrderType
+
+long getModificationInterval(Order order) {
+	val start = order.dateOfCreation
+	val end = order.dateOfProcessing
+	val interval = start.until(end, ChronoUnit.DAYS)
+	if (interval < 0)
+		throw new IllegalStateException("getModificationInterval " + interval)
+	return interval
+}
+
+long getRealizationInterval(Order order) {
+	val start = order.dateOfCreation
+	val end = order.dateOfRealization
+	val interval = start.until(end, ChronoUnit.DAYS)
+	if (interval < 0)
+		throw new IllegalStateException("getRealizationInterval " + interval)
+	return interval
+}
+
+long getDeliveryInterval(PartRequest partRequest) {
+	val start = partRequest.order.dateOfCreation
+	val end = partRequest.dateOfDelivery
+	val interval = start.until(end, ChronoUnit.DAYS)
+	return interval
+}
+
+boolean canTakePartsFromWarehouse(PartRequest request) {
+	return request.part.stocked >= request.count;
+}
+
+int calculatePrice(Order order){
+	var sum = 0
+	for (partRequest : order.requestedParts) {
+		val part = partRequest.part
+		var sellprice = (part.purchaseprice * 1.2) as int
+		var count = partRequest.count
+		sum += sellprice * count
+	}
+	return sum
+}
+//
+//long duration(PartRequest request) {
+//	val order = request.order
+//	val part = request.part
+//	if (canTakePartsFromWarehouse(request)) {
+//		return 0
+//	// Детали с датой доставки null считаем неотгруженными, для таких случаем возвращаем разницк создания и последнего изменения заказа
+//	} else if (request.dateOfDelivery !== null && getDeliveryInterval(request) >= 0) {
+//		return getDeliveryInterval(request)
+//	// Детали с отрицательной длительностью считаем уже на складе
+//	} else if (request.dateOfDelivery !== null) {
+//		return 0
+//	} else if (order.dateOfRealization !== null) {
+//		return getRealizationInterval(order)
+//	}
+//	return getModificationInterval(order)
+//}

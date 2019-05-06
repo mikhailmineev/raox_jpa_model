@@ -1,0 +1,225 @@
+import com.querydsl.jpa.impl.JPAQuery
+import dao.SqlDataProvider
+import domain.Order
+import domain.Part
+import domain.PartRequest
+import domain.QOrder
+import java.time.LocalDate
+import java.util.ArrayList
+import util.PartDeliveryRequest
+import java.util.List
+import java.util.HashMap
+import java.util.Map
+import raox_jpa_model.^types.OrderType
+
+/* Connection data */
+constant driver = "com.mysql.jdbc.Driver"
+constant dialect = "org.hibernate.dialect.MySQLDialect"
+constant url = "jdbc:mysql://localhost:3306/CorpTerminal?zeroDateTimeBehavior=convertToNull"
+constant username = "Observer"
+constant password = "CY73-YVRE-3FT2"
+constant data = new SqlDataProvider(driver, url, username, password, dialect, Part, Order, PartRequest)
+constant em = data.getEntityManager
+
+/* Data containers */
+constant failDuration = new ArrayList<Double>
+constant successfulDuration = new ArrayList<Double>
+constant failPrices = new ArrayList<Integer>
+constant successfulPrices = new ArrayList<Integer>
+constant deliveries = new ArrayList<Integer>
+constant requests = new HashMap<OrderType, List<PartDeliveryRequest>>
+
+/* Simulation constants */
+constant startSimulation = "2017-01-01"
+constant finishSimulation = "2018-01-01"
+constant initialBalance = 1_000_000
+enum OrderResult {OK, FAIL, LATE}
+enum OrderState {REQUESTED, PROCESSING, FINISHED}
+
+type Company {
+	int balance
+	double fillCoeff
+}
+
+resource company = Company.create(initialBalance, 1)
+
+/* Order logic */
+event Payments() {
+	company.balance = company.balance - 200_000
+	Payments.plan(LocalDate.ofEpochDay(Math.round(currentTime)).plusMonths(1).toEpochDay)
+	logging.info(String.format("Аренда 200000"))
+}
+
+event OrderReceived(Order order) {
+	if (order.requestedParts.isEmpty && order.dateOfRealization === null && order.dateOfProcessing === null) {
+		return
+	}
+	if (order.solutionName == "ЗаявкаВыданаВРезерв") {
+		return
+	}
+	var orderResult = OrderResult.OK
+	if(order.dateOfRealization === null) {
+		orderResult = OrderResult.FAIL
+	}
+	OrderType.create(order, OrderState.REQUESTED, orderResult, currentTime, 0)
+}
+
+rule ProcessOrder() {
+	relevant order = OrderType.accessible.filter[state == OrderState.REQUESTED].any
+
+	def execute() {
+		order.state = OrderState.PROCESSING
+		val partRequests = order.original.requestedParts
+
+		// courier
+		if (partRequests.size == 1) {
+			val partRequest = partRequests.get(0)
+			if (partRequest.count == 1) {
+				// если заказ провальный, курьера не посылаем
+				if (order.resulted === OrderResult.FAIL) {
+					order.state = OrderState.FINISHED
+					return
+				}
+				
+				if (partRequest.part.stocked < 1) {
+						CourierBroughtPart.plan(currentTime + 1, order, partRequest.part)
+					return
+				} else {
+					partRequest.part.stocked = partRequest.part.stocked - 1
+					order.state = OrderState.FINISHED
+					return
+				}
+			}
+		}
+
+		// delivery company
+		takePartsForOrder(order)
+	}
+}
+
+event CourierBroughtPart(OrderType order, Part part) {
+	val mem = company.balance
+	company.balance = company.balance - part.purchaseprice - 700
+	order.state = OrderState.FINISHED	
+	logging.info(String.format("Баланс после курьера %d, ∆ %d", company.balance, company.balance - mem))
+	deliveries.add(mem - company.balance)
+}
+
+void takePartsForOrder(OrderType order) {
+	order.state = OrderState.FINISHED
+	
+	for (PartRequest request : order.original.requestedParts) {
+		val part = request.part
+		if (functions.canTakePartsFromWarehouse(request)) {
+			part.stocked -= request.count
+		} else {
+			order.state = OrderState.PROCESSING
+			
+			var partsNeeded = request.count - part.stocked
+			if (partsNeeded < 1) {
+				throw new RuntimeException(String.format("Order %s had parts to request %d, stocked", order, request.count, part.stocked))
+			}
+			part.stocked = 0
+			
+			requests.computeIfAbsent(order, [f|new ArrayList<PartDeliveryRequest>()])
+			requests.get(order).add(new PartDeliveryRequest(part, partsNeeded))
+		}
+	}
+}
+
+event BigDelivery() {
+	val copied = new HashMap<OrderType, List<PartDeliveryRequest>>();
+	requests.forEach(
+		[ k, v |
+			{
+				// заказ вроде как успешный, потому по нему оформляем доставку
+				if (k.resulted === OrderResult.OK) {
+					val values = new ArrayList<PartDeliveryRequest>();
+					v.forEach([vv|values.add(new PartDeliveryRequest(vv))])
+					copied.put(k, values)
+				}
+			}
+		]
+	)
+
+	BigDelivery.plan(LocalDate.ofEpochDay(Math.round(currentTime)).plusWeeks(4).toEpochDay)
+	BigDeliveryEnd.plan(LocalDate.ofEpochDay(Math.round(currentTime)).plusWeeks(1).toEpochDay, copied)
+	requests.clear
+}
+
+event BigDeliveryEnd(Map<OrderType, List<PartDeliveryRequest>> ordersToFill) {
+	val mem = company.balance
+
+	ordersToFill.forEach [ k, v |
+		{
+			v.forEach [ r |
+				{
+					company.balance = company.balance - r.part.purchaseprice * r.count
+					r.part.stocked += Math.round((company.fillCoeff - 1) * r.count) as int
+				}
+			]
+		}
+		k.state = OrderState.FINISHED
+	]
+	company.balance = company.balance - 1500
+	logging.info(String.format("Баланс после крупной доставки %d, ∆ %d", company.balance, company.balance - mem))
+	deliveries.add(mem - company.balance)
+}
+
+rule ShipOrder() {
+	relevant order = OrderType.accessible.filter[state == OrderState.FINISHED].any
+
+	def execute() {
+		val mem = company.balance
+		order.erase()
+		val price = functions.calculatePrice(order.original)
+		val duration = currentTime - order.creationTime
+		
+		
+		switch (order.resulted) {
+			case OK: {
+				company.balance = company.balance + price
+				successfulDuration.add(duration)
+				successfulPrices.add(price)
+				logging.info(String.format("Баланс после успешного заказа %d, ∆ %d", company.balance, company.balance - mem))
+			}
+			default: {
+				failDuration.add(duration)
+				failPrices.add(price)
+			}
+		}
+	}
+}
+
+logic Model {
+	activity processOrder = new Activity(ProcessOrder.create())
+	activity utilizeOrder = new Activity(ShipOrder.create())
+}
+
+def terminateCondition() {
+	var terminate = false
+	terminate = terminate || company.balance <= 0
+	terminate = terminate || currentTime >= LocalDate.parse(finishSimulation).toEpochDay
+	return terminate
+
+}
+
+def init() {
+	val startDate = LocalDate.parse(startSimulation)
+	val endDate = LocalDate.parse(finishSimulation)
+
+	val qOrder = QOrder.order
+	val query = new JPAQuery<Order>(em)
+
+	val orderList = query.from(qOrder).where(qOrder.dateOfCreation.between(startDate, endDate)).orderBy(
+		qOrder.dateOfCreation.asc).fetch
+
+	for (order : orderList) {
+		OrderReceived.plan(order.getEpochDayOfCreation(), order)
+	}
+
+	Payments.plan(startDate.plusMonths(1).toEpochDay)
+	BigDelivery.plan(startDate.plusWeeks(4).toEpochDay)
+}
+
+result balance = Result.create([company.balance])
